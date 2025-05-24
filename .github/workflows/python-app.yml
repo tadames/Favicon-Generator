@@ -11,20 +11,25 @@ on:
       image_path:
         description: 'Path to source image'
         required: true
-        default: 'assets/logo.png'
+        default: 'assets/logo.jpg'
 
 jobs:
   generate-favicon:
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: write  # Required for pushing changes
+    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.9'
+        python-version: '3.11'
         
     - name: Install dependencies
       run: |
@@ -139,17 +144,17 @@ jobs:
       run: |
         # Define possible image paths
         POSSIBLE_PATHS=(
-          "assets/logo.png"
           "assets/logo.jpg"
           "assets/logo.jpeg"
+          "assets/logo.png"
           "assets/logo.svg"
-          "src/logo.png"
-          "src/logo.jpg" 
+          "src/logo.jpg"
           "src/logo.jpeg"
+          "src/logo.png" 
           "src/logo.svg"
-          "logo.png"
           "logo.jpg"
           "logo.jpeg"
+          "logo.png"
           "logo.svg"
         )
         
@@ -183,13 +188,11 @@ jobs:
         git diff --staged --quiet || git commit -m "🎨 Auto-generate favicon files"
         
     - name: Push changes
-      uses: ad-m/github-push-action@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: ${{ github.ref }}
+      run: |
+        git push
         
     - name: Upload favicon artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: favicon-files
         path: |
