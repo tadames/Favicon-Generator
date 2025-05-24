@@ -1,39 +1,199 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
-
-name: Python application
+# .github/workflows/generate-favicon.yml
+name: Generate Favicon
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-permissions:
-  contents: read
+    paths:
+      - 'assets/logo.*'  # Triggers when logo file is updated
+      - 'src/logo.*'     # Alternative path
+  workflow_dispatch:     # Allows manual triggering
+    inputs:
+      image_path:
+        description: 'Path to source image'
+        required: true
+        default: 'assets/logo.png'
 
 jobs:
-  build:
-
+  generate-favicon:
     runs-on: ubuntu-latest
-
+    
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v3
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
       with:
-        python-version: "3.10"
+        python-version: '3.9'
+        
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install flake8 pytest
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    - name: Lint with flake8
+        pip install Pillow
+        
+    - name: Create favicon generator script
       run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Test with pytest
+        cat > generate_favicon.py << 'EOF'
+        #!/usr/bin/env python3
+        import sys
+        import os
+        from PIL import Image, ImageOps
+        import json
+
+        FAVICON_SIZES = [16, 32, 48, 64, 128, 256]
+        ANDROID_SIZES = [192, 512]
+        APPLE_ICON_SIZE = 180
+
+        def generate_favicon(input_path, output_dir='./public'):
+            if not os.path.exists(input_path):
+                raise FileNotFoundError(f"Input file not found: {input_path}")
+            
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"🚀 Generating favicon from: {input_path}")
+            print(f"📁 Output directory: {output_dir}")
+            
+            try:
+                with Image.open(input_path) as img:
+                    if img.mode != 'RGBA':
+                        img = img.convert('RGBA')
+                    
+                    images_for_ico = []
+                    
+                    for size in FAVICON_SIZES:
+                        resized = img.resize((size, size), Image.Resampling.LANCZOS)
+                        png_path = os.path.join(output_dir, f'favicon-{size}x{size}.png')
+                        resized.save(png_path, 'PNG', optimize=True)
+                        images_for_ico.append(resized.copy())
+                        print(f"✅ Generated {size}x{size} PNG")
+                    
+                    ico_path = os.path.join(output_dir, 'favicon.ico')
+                    images_for_ico[0].save(
+                        ico_path,
+                        format='ICO',
+                        sizes=[(size, size) for size in FAVICON_SIZES],
+                        append_images=images_for_ico[1:]
+                    )
+                    print("🎉 Successfully created favicon.ico!")
+                    
+                    apple_icon = img.resize((APPLE_ICON_SIZE, APPLE_ICON_SIZE), Image.Resampling.LANCZOS)
+                    apple_path = os.path.join(output_dir, 'apple-touch-icon.png')
+                    apple_icon.save(apple_path, 'PNG', optimize=True)
+                    print(f"✅ Generated Apple Touch Icon ({APPLE_ICON_SIZE}x{APPLE_ICON_SIZE})")
+                    
+                    for size in ANDROID_SIZES:
+                        android_icon = img.resize((size, size), Image.Resampling.LANCZOS)
+                        android_path = os.path.join(output_dir, f'android-chrome-{size}x{size}.png')
+                        android_icon.save(android_path, 'PNG', optimize=True)
+                        print(f"✅ Generated Android Chrome icon ({size}x{size})")
+                    
+                    generate_web_manifest(output_dir)
+                    
+            except Exception as e:
+                print(f"❌ Error processing image: {e}")
+                sys.exit(1)
+
+        def generate_web_manifest(output_dir):
+            manifest = {
+                "name": "Circus Tactics",
+                "short_name": "CircusTactics", 
+                "icons": [
+                    {
+                        "src": "/android-chrome-192x192.png",
+                        "sizes": "192x192",
+                        "type": "image/png"
+                    },
+                    {
+                        "src": "/android-chrome-512x512.png", 
+                        "sizes": "512x512",
+                        "type": "image/png"
+                    }
+                ],
+                "theme_color": "#39ff14",
+                "background_color": "#111111", 
+                "display": "standalone"
+            }
+            
+            manifest_path = os.path.join(output_dir, 'site.webmanifest')
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2)
+            
+            print("✅ Generated site.webmanifest")
+
+        if __name__ == '__main__':
+            if len(sys.argv) < 2:
+                print("Usage: python generate_favicon.py <input-image> [output-directory]")
+                sys.exit(1)
+            
+            input_path = sys.argv[1]
+            output_dir = sys.argv[2] if len(sys.argv) > 2 else './public'
+            
+            try:
+                generate_favicon(input_path, output_dir)
+            except Exception as e:
+                print(f"❌ Error: {e}")
+                sys.exit(1)
+        EOF
+        
+    - name: Find source image
+      id: find-image
       run: |
-        pytest
+        # Define possible image paths
+        POSSIBLE_PATHS=(
+          "assets/logo.png"
+          "assets/logo.jpg"
+          "assets/logo.jpeg"
+          "assets/logo.svg"
+          "src/logo.png"
+          "src/logo.jpg" 
+          "src/logo.jpeg"
+          "src/logo.svg"
+          "logo.png"
+          "logo.jpg"
+          "logo.jpeg"
+          "logo.svg"
+        )
+        
+        # Use manual input if provided
+        if [ "${{ github.event.inputs.image_path }}" != "" ]; then
+          echo "image_path=${{ github.event.inputs.image_path }}" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        # Find the first existing image
+        for path in "${POSSIBLE_PATHS[@]}"; do
+          if [ -f "$path" ]; then
+            echo "image_path=$path" >> $GITHUB_OUTPUT
+            echo "Found source image: $path"
+            exit 0
+          fi
+        done
+        
+        echo "❌ No source image found!"
+        exit 1
+        
+    - name: Generate favicon
+      run: |
+        python generate_favicon.py "${{ steps.find-image.outputs.image_path }}" ./public
+        
+    - name: Commit generated files
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add public/favicon* public/apple-touch-icon.png public/android-chrome* public/site.webmanifest
+        git diff --staged --quiet || git commit -m "🎨 Auto-generate favicon files"
+        
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
+        
+    - name: Upload favicon artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: favicon-files
+        path: |
+          public/favicon*
+          public/apple-touch-icon.png
+          public/android-chrome*
+          public/site.webmanifest
